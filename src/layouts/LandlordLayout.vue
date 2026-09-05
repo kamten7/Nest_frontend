@@ -17,15 +17,15 @@
         <router-link to="/landlord/appointment" class="nav-link" active-class="active">
           📅 预约管理
         </router-link>
-        <router-link to="/landlord/rent" class="nav-link" active-class="active">
-          🧾 租房订单
+        <router-link to="/landlord/chat" class="nav-link" active-class="active">
+          💬 消息
+          <el-badge v-if="unreadCount > 0" :value="unreadCount" class="nav-badge" />
         </router-link>
         <router-link to="/landlord/wallet" class="nav-link" active-class="active">
           💰 钱包
         </router-link>
-        <router-link to="/landlord/chat" class="nav-link" active-class="active">
-          💬 消息
-          <el-badge v-if="unreadCount > 0" :value="unreadCount" class="nav-badge" />
+        <router-link to="/landlord/rent" class="nav-link" active-class="active">
+          📋 租房订单
         </router-link>
       </nav>
 

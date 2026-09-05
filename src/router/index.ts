@@ -70,7 +70,7 @@ const router = createRouter({
           path: 'wallet',
           name: 'Wallet',
           component: () => import('@/views/landlord/WalletPage.vue'),
-          meta: { title: '钱包' },
+          meta: { title: '我的钱包' },
         },
         {
           path: 'rent',
