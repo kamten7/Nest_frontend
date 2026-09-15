@@ -1,8 +1,14 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+/** 后端 HTTP 接口地址（Spring Boot / Tomcat，见 application.yml 的 server.port） */
+export const apiBaseUrl = 'http://localhost:8080'
+
+/** 聊天 WebSocket 地址 —— ★ 由 Netty 提供，是独立端口，与 HTTP 不是同一个，不能由 apiBaseUrl 派生 */
+export const wsBaseUrl = 'ws://localhost:8081'
+
 const request = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: apiBaseUrl,
   timeout: 15000,
 })
 

@@ -51,6 +51,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getAdminUnread } from '@/api/chat'
+import { wsBaseUrl } from '@/api/request'
 import { decodeJwt } from '@/utils/jwt'
 import { useNotificationStore } from '@/stores/notification'
 import NotificationHost from '@/components/NotificationHost.vue'
@@ -85,7 +86,7 @@ function connectWebSocket(landlordId: number) {
 
   // 关键：后端握手鉴权强制校验 token，URL 必须带 ?token=，否则连接被拒、收不到推送
   const token = localStorage.getItem('adminToken') || ''
-  const url = `ws://localhost:8080/ws/chat/landlord/${landlordId}?token=${token}`
+  const url = `${wsBaseUrl}/ws/chat/landlord/${landlordId}?token=${token}`
   ws = new WebSocket(url)
 
   ws.onopen = () => {

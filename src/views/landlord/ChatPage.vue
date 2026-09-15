@@ -70,6 +70,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { getConversations, getMessages, type Conversation, type ChatMessage } from '@/api/chat'
+import { wsBaseUrl } from '@/api/request'
 import { decodeJwt } from '@/utils/jwt'
 
 const conversations = ref<Conversation[]>([])
@@ -144,7 +145,7 @@ function connectSocket() {
   const payload = token ? decodeJwt(token) : null
   if (!payload?.userId) return
 
-  const url = `ws://localhost:8080/ws/chat/landlord/${payload.userId}?token=${token}`
+  const url = `${wsBaseUrl}/ws/chat/landlord/${payload.userId}?token=${token}`
   ws = new WebSocket(url)
 
   ws.onmessage = (event) => {
