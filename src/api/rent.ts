@@ -15,6 +15,10 @@ export interface RentPayment {
 export interface RentTermination {
   id: number
   effectiveEndPeriod: string
+  /** 从押金中扣除、归房东的金额（物品损坏赔偿等） */
+  deductAmount: number
+  /** 实际退回租客的押金金额 */
+  refundAmount: number
   refundStatus: number
   refundTime: string | null
   remark: string | null
@@ -48,7 +52,20 @@ export function getRentDetail(orderId: number) {
   return request.get<{ data: RentOrder }>(`/admin/rent/${orderId}`)
 }
 
-/** 退回押金（退租申请中且租期结束） */
-export function refundDeposit(orderId: number) {
-  return request.post<{ data: RentOrder }>(`/admin/rent/${orderId}/refund`)
+/** 退租结算请求体 */
+export interface RefundDepositPayload {
+  /** 从押金中扣除、归房东的金额；不传或 0 = 全额退回租客 */
+  deductAmount?: number
+  /** 扣款说明 */
+  remark?: string
+}
+
+/**
+ * 退回押金（退租申请中且租期结束）。
+ *
+ * <p>可带扣款金额：租客损坏房屋内物品时从押金中扣除，扣除部分归房东（留在房东钱包，
+ * 结算后即可提现），剩余押金退回租客钱包；不传则全额退回。
+ */
+export function refundDeposit(orderId: number, payload: RefundDepositPayload = {}) {
+  return request.post<{ data: RentOrder }>(`/admin/rent/${orderId}/refund`, payload)
 }

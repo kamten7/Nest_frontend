@@ -5,6 +5,14 @@
       <div class="balance-label">钱包余额（元）</div>
       <div class="balance-num">{{ money(balance) }}</div>
       <div class="balance-tip">租客缴纳的押金与房租会自动到账</div>
+      <div class="balance-split">
+        <span class="split-item">
+          在租押金（不可提现）<b class="locked">{{ money(lockedAmount) }}</b>
+        </span>
+        <span class="split-item">
+          可提现余额<b class="available">{{ money(availableBalance) }}</b>
+        </span>
+      </div>
       <el-button type="primary" size="large" @click="openWithdraw">提现到微信零钱</el-button>
     </div>
 
@@ -48,8 +56,9 @@
     </el-card>
 
     <!-- 提现弹窗 -->
-    <el-dialog v-model="withdrawVisible" title="提现到微信零钱" width="360px">
+    <el-dialog v-model="withdrawVisible" title="提现到微信零钱" width="380px">
       <el-input v-model="withdrawAmount" type="number" placeholder="请输入提现金额" />
+      <div class="dialog-tip">可提现余额 {{ money(availableBalance) }} 元（余额 {{ money(balance) }} 元中，{{ money(lockedAmount) }} 元为在租押金，退租结算后方可提现）</div>
       <div class="dialog-tip">当前为预留接口：扣除余额、状态=处理中，未对接实际到账</div>
       <template #footer>
         <el-button @click="withdrawVisible = false">取消</el-button>
@@ -65,6 +74,10 @@ import { ElMessage } from 'element-plus'
 import { getWallet, getWalletTransactions, withdrawWallet, type WalletTransaction } from '@/api/wallet'
 
 const balance = ref(0)
+/** 在租订单押金：房东可见但不可提现 */
+const lockedAmount = ref(0)
+/** 可提现余额 = balance − lockedAmount */
+const availableBalance = ref(0)
 const txns = ref<WalletTransaction[]>([])
 const page = ref(1)
 const pageSize = ref(10)
@@ -88,6 +101,13 @@ async function loadWallet() {
   try {
     const res: any = await getWallet()
     balance.value = Number(res.data?.balance || 0)
+    const locked = Number(res.data?.lockedAmount || 0)
+    lockedAmount.value = locked
+    // 后端已算好可提现余额；兼容老接口（无该字段）时用余额−锁定兜底
+    const available = res.data?.availableBalance
+    availableBalance.value = available == null
+      ? Math.max(balance.value - locked, 0)
+      : Number(available)
   } catch {
     /* 拦截器已提示 */
   }
@@ -119,13 +139,24 @@ async function doWithdraw() {
     ElMessage.warning('请输入正确的提现金额')
     return
   }
-  if (amount > Number(balance.value)) {
-    ElMessage.warning('提现金额不能超过余额')
+  // 只能提「可提现余额」：在租订单的押金要等退租结算后才可用
+  if (amount > Number(availableBalance.value)) {
+    ElMessage.warning(
+      lockedAmount.value > 0
+        ? `提现金额不能超过可提现余额（${money(availableBalance.value)} 元，另有 ${money(lockedAmount.value)} 元为在租押金不可提现）`
+        : '提现金额不能超过余额',
+    )
     return
   }
   try {
     const res: any = await withdrawWallet(amount)
     balance.value = Number(res.data?.balance || 0)
+    if (res.data?.availableBalance != null) {
+      availableBalance.value = Number(res.data.availableBalance)
+    }
+    if (res.data?.lockedAmount != null) {
+      lockedAmount.value = Number(res.data.lockedAmount)
+    }
     withdrawVisible.value = false
     ElMessage.success('提现申请已提交')
     loadTxns()
@@ -186,7 +217,32 @@ function money(n: number | string | null | undefined) {
 .balance-tip {
   font-size: 13px;
   opacity: 0.8;
+  margin-bottom: 16px;
+}
+
+.balance-split {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
   margin-bottom: 20px;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
+.split-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.split-item .locked {
+  font-size: 18px;
+  color: #ffe08a;
+}
+
+.split-item .available {
+  font-size: 18px;
+  color: #b7f7c2;
 }
 
 .txn-card {
