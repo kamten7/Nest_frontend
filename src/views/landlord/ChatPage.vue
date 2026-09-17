@@ -68,6 +68,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChatDotRound } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { getConversations, getMessages, type Conversation, type ChatMessage } from '@/api/chat'
 import { wsBaseUrl } from '@/api/request'
@@ -139,8 +140,14 @@ async function openConversation(id: number) {
   }
 }
 
-/** 连接 WebSocket（房东端） */
+/** 连接 WebSocket（房东端）。重复调用安全：已连上/连接中则跳过，否则丢弃旧连接再重建。 */
 function connectSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+  if (ws) {
+    ws.onclose = null
+    ws.close()
+  }
+
   const token = localStorage.getItem('adminToken')
   const payload = token ? decodeJwt(token) : null
   if (!payload?.userId) return
@@ -189,7 +196,15 @@ function connectSocket() {
 
 function sendMessage() {
   const text = inputText.value.trim()
-  if (!text || !currentConv.value || !ws) return
+  if (!text || !currentConv.value) return
+
+  // ⚠️ 不能只判 !ws：socket 对象存在但未 OPEN 时 ws.send 会静默丢消息（或抛 InvalidStateError），
+  // 用户只看到"点了发送但没反应"。这里显式校验并尝试重连。
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    ElMessage.warning('聊天连接未就绪，正在重连，请稍后再试')
+    connectSocket()
+    return
+  }
 
   // 本地追加自己的消息
   messages.value.push({
