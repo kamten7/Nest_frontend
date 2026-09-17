@@ -6,9 +6,16 @@
       <h1>房源详情</h1>
       <div class="header-actions">
         <el-button size="small" type="primary" @click="goEdit">编辑</el-button>
-        <el-button size="small" :type="house.status === 1 ? 'warning' : 'success'" @click="toggleStatus">
-          {{ house.status === 1 ? '下架' : '上架' }}
+        <!-- 在租中禁止手动改状态，只允许 1↔0 切换 -->
+        <el-button
+          v-if="house.status !== 2"
+          size="small"
+          :type="house.status === 1 ? 'warning' : 'success'"
+          @click="toggleStatus"
+        >
+          {{ house.status === 1 ? '下架' : '重新发布' }}
         </el-button>
+        <el-button v-else size="small" type="info" disabled>在租中</el-button>
         <el-popconfirm title="确定删除该房源吗？" confirm-button-text="删除" @confirm="removeHouse">
           <template #reference>
             <el-button size="small" type="danger">删除</el-button>
@@ -33,8 +40,8 @@
         <div class="price-row">
           <span class="price">¥{{ house.price }}/月</span>
           <span v-if="house.deposit" class="deposit">押金 {{ house.deposit }} 元</span>
-          <el-tag :type="house.status === 1 ? 'success' : 'info'" class="status-tag">
-            {{ house.status === 1 ? '已上架' : '已下架' }}
+          <el-tag :type="statusTagType(house.status)" class="status-tag">
+            {{ statusText(house.status) }}
           </el-tag>
         </div>
         <h2 class="title">{{ house.title }}</h2>
@@ -154,12 +161,21 @@ function goEdit() {
   router.push(`/landlord/house/edit/${houseId}`)
 }
 
+// 房源状态：0下架(需重新发布) / 1上架 / 2在租中
+function statusText(status: number) {
+  return status === 1 ? '上架中' : status === 2 ? '在租中' : '已下架'
+}
+function statusTagType(status: number): 'success' | 'warning' | 'info' {
+  return status === 1 ? 'success' : status === 2 ? 'warning' : 'info'
+}
+
 async function toggleStatus() {
+  // 仅允许 1↔0 切换；2(在租中) 由按钮 v-if 拦截
+  const newStatus = house.value!.status === 1 ? 0 : 1
   try {
-    const newStatus = house.value!.status === 1 ? 0 : 1
     await updateHouseStatus(houseId, newStatus)
     house.value!.status = newStatus
-    ElMessage.success(newStatus === 1 ? '已上架' : '已下架')
+    ElMessage.success(newStatus === 1 ? '已重新发布' : '已下架')
   } catch {
     // 拦截器已提示
   }

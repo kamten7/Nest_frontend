@@ -26,25 +26,26 @@
       <el-table-column prop="district" label="区域" width="100">
         <template #default="{ row }">{{ row.city }}·{{ row.district }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="90">
+      <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'">
-            {{ row.status === 1 ? '已上架' : '已下架' }}
-          </el-tag>
+          <el-tag :type="statusTagType(row.status)">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="viewCount" label="浏览量" width="80" />
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="goDetail(row.id)">详情</el-button>
           <el-button size="small" type="primary" @click="goEdit(row.id)">编辑</el-button>
+          <!-- 在租中禁止手动改状态 -->
           <el-button
+            v-if="row.status !== 2"
             size="small"
             :type="row.status === 1 ? 'warning' : 'success'"
             @click="toggleStatus(row)"
           >
-            {{ row.status === 1 ? '下架' : '上架' }}
+            {{ row.status === 1 ? '下架' : '重新发布' }}
           </el-button>
+          <el-button v-else size="small" type="info" disabled>在租中</el-button>
           <el-popconfirm title="确定删除该房源吗？" confirm-button-text="删除" @confirm="removeHouse(row.id)">
             <template #reference>
               <el-button size="small" type="danger">删除</el-button>
@@ -100,11 +101,20 @@ function goEdit(id: number) {
   router.push(`/landlord/house/edit/${id}`)
 }
 
+// 房源状态：0下架(需重新发布) / 1上架 / 2在租中
+function statusText(status: number) {
+  return status === 1 ? '上架中' : status === 2 ? '在租中' : '已下架'
+}
+function statusTagType(status: number): 'success' | 'warning' | 'info' {
+  return status === 1 ? 'success' : status === 2 ? 'warning' : 'info'
+}
+
 async function toggleStatus(row: HouseVO) {
+  // 仅允许 1↔0 切换；2(在租中) 由按钮 v-if 拦截
+  const newStatus = row.status === 1 ? 0 : 1
   try {
-    const newStatus = row.status === 1 ? 0 : 1
     await updateHouseStatus(row.id, newStatus)
-    ElMessage.success(newStatus === 1 ? '已上架' : '已下架')
+    ElMessage.success(newStatus === 1 ? '已重新发布' : '已下架')
     loadList()
   } catch {
     // 拦截器已提示

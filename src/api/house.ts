@@ -141,7 +141,7 @@ export function getHouseById(id: number) {
   return request.get<{ data: HouseVO }>(`/admin/house/${id}`)
 }
 
-/** 上架/下架 */
+/** 房源状态切换：0下架(需重新发布) / 1上架 / 2在租中(系统自动，不可手动改) */
 export function updateHouseStatus(id: number, status: number) {
   return request.put(`/admin/house/${id}/status`, null, { params: { status } })
 }
