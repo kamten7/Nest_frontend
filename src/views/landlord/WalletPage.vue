@@ -187,7 +187,9 @@ function money(n: number | string | null | undefined) {
 .wallet-page {
   padding: 24px;
   background: #f5f7fa;
-  min-height: 100%;
+  /* 必须用 height 而非 min-height：父级 .nav-main 是定高 + overflow:hidden 的 flex 项，
+     用 min-height 本页会随内容撑高并被父级裁掉，自身 overflow-y 失效 ⇒ 滚轮滚不到底部 */
+  height: 100%;
   box-sizing: border-box;
   max-width: 960px;
   margin: 0 auto;

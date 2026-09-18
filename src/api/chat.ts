@@ -42,3 +42,8 @@ export function getMessages(conversationId: number) {
 export function getAdminUnread() {
   return request.get<{ data: number }>('/admin/chat/unread')
 }
+
+/** 找或创建与某租客的会话（订单页「联系租客」用），返回会话 ID */
+export function createConversation(otherId: number) {
+  return request.post<{ data: number }>('/admin/chat/create', { otherId })
+}

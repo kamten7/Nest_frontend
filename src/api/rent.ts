@@ -31,6 +31,12 @@ export interface RentOrder {
   houseId: number
   houseTitle: string | null
   houseCover: string | null
+  /** 房东身份（租客侧「联系房东」用；房东侧为自己的 ID） */
+  landlordId: number | null
+  landlordName: string | null
+  /** 租客身份（房东侧「联系租客」用） */
+  tenantId: number | null
+  tenantName: string | null
   deposit: number
   monthlyRent: number
   status: number

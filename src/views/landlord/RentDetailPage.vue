@@ -18,6 +18,18 @@
       </el-descriptions>
     </el-card>
 
+    <!-- 租客信息（可直接发起会话联系租客） -->
+    <el-card v-if="order.tenantId" shadow="never" class="section">
+      <template #header><span>租客信息</span></template>
+      <div class="tenant-row">
+        <div class="tenant-main">
+          <div class="tenant-name">{{ order.tenantName || '租客' }}</div>
+          <div class="tenant-sub">入住、维修、退租等事宜可直接与租客沟通</div>
+        </div>
+        <el-button type="primary" @click="goChat">联系租客</el-button>
+      </div>
+    </el-card>
+
     <!-- 退租信息 -->
     <el-card v-if="order.termination" shadow="never" class="section">
       <template #header><span>退租信息</span></template>
@@ -52,6 +64,44 @@
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
       </el-table>
+    </el-card>
+
+    <!-- 该房源的评价（房东可直接回复/参与讨论） -->
+    <el-card v-if="reviews.records.length" shadow="never" class="section">
+      <template #header><span>房源评价与讨论</span></template>
+      <div v-for="r in reviews.records" :key="r.id" class="review-item">
+        <div class="review-header">
+          <span class="review-name">{{ r.tenantName }}</span>
+          <el-rate v-if="r.rating" :model-value="r.rating" disabled size="small" />
+          <el-tag v-else size="small" type="info">评论</el-tag>
+          <span class="review-time">{{ formatTime(r.createTime) }}</span>
+          <span
+            class="like-btn"
+            :class="{ liked: r.liked }"
+            title="点赞 / 取消赞"
+            @click="toggleLikeReview(r)"
+          >♥ {{ r.likeCount || 0 }}</span>
+        </div>
+        <p class="review-content">{{ r.content }}</p>
+        <div v-if="r.comments && r.comments.length" class="comment-list">
+          <div v-for="c in r.comments" :key="c.id" class="comment-item">
+            <span class="comment-name">{{ c.userName }}</span>
+            <span v-if="c.parentUserName" class="comment-reply-to">回复 {{ c.parentUserName }}</span>
+            <span>：{{ c.content }}</span>
+            <span class="comment-ops">
+              <span
+                class="like-btn"
+                :class="{ liked: c.liked }"
+                title="点赞 / 取消赞"
+                @click="toggleLikeComment(c)"
+              >♥ {{ c.likeCount || 0 }}</span>
+              <el-button link size="small" @click="reply(r, c)">回复</el-button>
+              <el-button v-if="c.mine" link type="danger" size="small" @click="removeComment(c)">删除</el-button>
+            </span>
+          </div>
+        </div>
+        <el-button link type="primary" size="small" @click="reply(r, null)">回复 / 参与讨论</el-button>
+      </div>
     </el-card>
 
     <!-- 操作：退租结算 -->
@@ -103,10 +153,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getRentDetail, refundDeposit, type RentOrder } from '@/api/rent'
+import { createConversation } from '@/api/chat'
+import request from '@/api/request'
 
 const route = useRoute()
 const router = useRouter()
 const order = ref<RentOrder | null>(null)
+
+/** 该房源的评价列表（房东可回复） */
+const reviews = ref<{ records: any[] }>({ records: [] })
 
 /** 退租结算：从押金中扣除的金额（归房东），默认 0 = 全额退回租客 */
 const deductAmount = ref(0)
@@ -127,11 +182,113 @@ onMounted(async () => {
   const id = Number(route.params.id)
   try {
     const res: any = await getRentDetail(id)
-    order.value = res.data
+    const detail = res.data as RentOrder
+    order.value = detail
+    if (detail?.houseId) {
+      loadReviews(detail.houseId)
+    }
   } catch {
     /* 拦截器已提示 */
   }
 })
+
+/** 读取该房源的评价（走房东端通道，才能拿到房东本人的 liked / mine 状态） */
+async function loadReviews(houseId: number) {
+  try {
+    const res: any = await request.get(`/admin/review/house/${houseId}`, {
+      params: { page: 1, pageSize: 50 },
+    })
+    reviews.value = { records: res.data?.records || [] }
+  } catch {
+    /* 忽略评价加载失败 */
+  }
+}
+
+/** 联系租客：找/建与租客的会话 → 跳聊天页并自动打开该会话 */
+async function goChat() {
+  if (!order.value?.tenantId) {
+    ElMessage.warning('无法获取租客信息')
+    return
+  }
+  try {
+    const res: any = await createConversation(order.value.tenantId)
+    const conversationId = res.data
+    router.push({ path: '/landlord/chat', query: { conversationId: String(conversationId) } })
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 点赞 / 取消赞：顶楼评价 */
+async function toggleLikeReview(review: any) {
+  try {
+    const liked = !review.liked
+    await request.post(`/admin/review/${review.id}/like`, { liked })
+    review.liked = liked
+    review.likeCount = Math.max(0, (review.likeCount || 0) + (liked ? 1 : -1))
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 点赞 / 取消赞：楼中回复 */
+async function toggleLikeComment(comment: any) {
+  try {
+    const liked = !comment.liked
+    await request.post(`/admin/review/comment/${comment.id}/like`, { liked })
+    comment.liked = liked
+    comment.likeCount = Math.max(0, (comment.likeCount || 0) + (liked ? 1 : -1))
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 删除自己发的回复 */
+async function removeComment(comment: any) {
+  try {
+    await ElMessageBox.confirm('删除后无法恢复（它下面的追问也会一并删除），确定删除？', '删除回复', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await request.delete(`/admin/review/comment/${comment.id}`)
+    ElMessage.success('已删除')
+    if (order.value?.houseId) {
+      loadReviews(order.value.houseId)
+    }
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 房东回复：comment 为 null 表示回复整条评价，否则挂在该条回复下 */
+async function reply(review: any, comment: any) {
+  const title = comment ? `回复 ${comment.userName}` : `回复 ${review.tenantName} 的评价`
+  try {
+    const { value } = await ElMessageBox.prompt('输入你的回复内容', title, {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：感谢入住，有任何问题随时联系我～',
+      inputValidator: (v: string) => (v && v.trim() ? true : '回复内容不能为空'),
+    })
+    await request.post(`/admin/review/${review.id}/comment`, {
+      content: value.trim(),
+      parentId: comment ? comment.id : null,
+    })
+    ElMessage.success('回复成功')
+    if (order.value?.houseId) {
+      loadReviews(order.value.houseId)
+    }
+  } catch (e: any) {
+    if (e === 'cancel' || e === 'close') return
+    /* 其余错误拦截器已提示 */
+  }
+}
 
 function refund() {
   if (!order.value) return
@@ -186,7 +343,9 @@ function money(n: number | string | null | undefined) {
 .detail-page {
   padding: 24px;
   background: #f5f7fa;
-  min-height: 100%;
+  /* 必须用 height 而非 min-height：父级 .nav-main 是定高 + overflow:hidden 的 flex 项，
+     用 min-height 本页会随内容撑高并被父级裁掉，自身 overflow-y 失效 ⇒ 滚轮滚不到底部 */
+  height: 100%;
   box-sizing: border-box;
   max-width: 960px;
   margin: 0 auto;
@@ -209,6 +368,26 @@ function money(n: number | string | null | undefined) {
   max-width: 760px;
 }
 
+/* ===== 租客信息 / 联系租客 ===== */
+.tenant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tenant-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.tenant-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+
 .form-tip {
   margin-left: 12px;
   font-size: 13px;
@@ -227,5 +406,88 @@ function money(n: number | string | null | undefined) {
 .deduct {
   color: #f56c6c;
   font-weight: 600;
+}
+
+/* ===== 评价与讨论 ===== */
+.review-item {
+  border-bottom: 1px solid #f0f2f5;
+  padding: 12px 0;
+}
+
+.review-item:last-child {
+  border-bottom: none;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-name {
+  font-weight: 600;
+}
+
+.review-time,
+.review-like {
+  font-size: 12px;
+  color: #c0c4cc;
+}
+
+.like-btn {
+  font-size: 12px;
+  color: #c0c4cc;
+  cursor: pointer;
+  user-select: none;
+  padding-left: 10px;
+}
+
+.like-btn:hover,
+.like-btn.liked {
+  color: #e74c3c;
+}
+
+.comment-ops {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.review-content {
+  margin: 8px 0;
+  color: #606266;
+}
+
+.comment-list {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.comment-item {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 6px;
+}
+
+.comment-name {
+  color: #1a56db;
+}
+
+.comment-reply-to {
+  font-size: 12px;
+  color: #909399;
+  padding: 0 4px;
+}
+
+.comment-like {
+  font-size: 12px;
+  color: #c0c4cc;
+  padding-left: 10px;
+}
+
+.comment-reply-btn {
+  margin-left: 10px;
 }
 </style>

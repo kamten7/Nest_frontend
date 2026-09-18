@@ -87,23 +87,50 @@
         </div>
       </section>
 
-      <!-- 住客评价 -->
+      <!-- 住客评价 / 房源讨论 -->
       <section class="section">
         <h3 class="section-title">
           住客评价
-          <span v-if="reviews.avgRating" class="avg-rating">⭐ {{ reviews.avgRating }}</span>
+          <span v-if="reviews.ratedCount" class="avg-rating">⭐ {{ reviews.avgRating }}</span>
+          <span v-if="reviews.ratedCount" class="review-count">{{ reviews.ratedCount }} 人评分</span>
+          <span class="review-count">共 {{ reviews.totalCount }} 条</span>
         </h3>
         <el-empty v-if="!reviews.records.length" description="暂无评价" :image-size="60" />
         <div v-for="r in reviews.records" :key="r.id" class="review-item">
           <div class="review-header">
             <span class="review-name">{{ r.tenantName }}</span>
-            <el-rate :model-value="r.rating" disabled size="small" />
+            <el-rate v-if="r.rating" :model-value="r.rating" disabled size="small" />
+            <el-tag v-else size="small" type="info">评论</el-tag>
+            <span class="review-time">{{ (r.createTime || '').replace('T', ' ').slice(0, 16) }}</span>
+            <span
+              class="like-btn"
+              :class="{ liked: r.liked }"
+              title="点赞 / 取消赞"
+              @click="toggleLikeReview(r)"
+            >♥ {{ r.likeCount || 0 }}</span>
           </div>
           <p class="review-content">{{ r.content }}</p>
           <div v-if="r.comments && r.comments.length" class="comment-list">
             <div v-for="c in r.comments" :key="c.id" class="comment-item">
-              <span class="comment-name">{{ c.userName }}：</span>{{ c.content }}
+              <span class="comment-name">{{ c.userName }}</span>
+              <span v-if="c.parentUserName" class="comment-reply-to">回复 {{ c.parentUserName }}</span>
+              <span>：{{ c.content }}</span>
+              <span class="comment-ops">
+                <span
+                  class="like-btn"
+                  :class="{ liked: c.liked }"
+                  title="点赞 / 取消赞"
+                  @click="toggleLikeComment(c)"
+                >♥ {{ c.likeCount || 0 }}</span>
+                <el-button link size="small" @click="reply(r, c)">回复</el-button>
+                <el-button v-if="c.mine" link type="danger" size="small" @click="removeComment(c)">删除</el-button>
+              </span>
             </div>
+          </div>
+          <div class="reply-row">
+            <el-button link type="primary" size="small" @click="reply(r, null)">
+              {{ r.comments && r.comments.length ? '参与讨论' : '回复 / 提问' }}
+            </el-button>
           </div>
         </div>
       </section>
@@ -114,7 +141,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getHouseById, updateHouseStatus, deleteHouse, type HouseVO } from '@/api/house'
 import request from '@/api/request'
 
@@ -122,7 +149,12 @@ const route = useRoute()
 const router = useRouter()
 const houseId = Number(route.params.id)
 const house = ref<HouseVO | null>(null)
-const reviews = ref<{ avgRating: number | null; records: any[] }>({ avgRating: null, records: [] })
+const reviews = ref<{
+  avgRating: number | null
+  ratedCount: number
+  totalCount: number
+  records: any[]
+}>({ avgRating: null, ratedCount: 0, totalCount: 0, records: [] })
 
 onMounted(async () => {
   try {
@@ -136,15 +168,91 @@ onMounted(async () => {
 
 async function loadReviews() {
   try {
-    // 评论列表是公开接口
-    const res: any = await request.get(`/user/review/house/${houseId}`)
-    const data = res.data || { records: [], avgRating: null }
+    // 走房东端通道（/admin/review/house/**）而不是公开的 /user/review/house/**：
+    // 后者在租客拦截器的可选认证下会被当成匿名，回不了房东本人的 liked / mine 状态
+    const res: any = await request.get(`/admin/review/house/${houseId}`, {
+      params: { page: 1, pageSize: 50 },
+    })
+    const data = res.data || { records: [] }
+    const records: any[] = data.records || []
     reviews.value = {
-      avgRating: data.records?.[0]?.avgRating ?? null,
-      records: data.records || [],
+      avgRating: records[0]?.avgRating ?? null,
+      ratedCount: records[0]?.ratedCount ?? 0,
+      totalCount: records[0]?.totalCount ?? 0,
+      records,
     }
   } catch {
     /* 忽略评论加载失败 */
+  }
+}
+
+/** 点赞 / 取消赞：顶楼评价（房东也可点赞） */
+async function toggleLikeReview(review: any) {
+  try {
+    const liked = !review.liked
+    await request.post(`/admin/review/${review.id}/like`, { liked })
+    review.liked = liked
+    review.likeCount = Math.max(0, (review.likeCount || 0) + (liked ? 1 : -1))
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 点赞 / 取消赞：楼中回复 */
+async function toggleLikeComment(comment: any) {
+  try {
+    const liked = !comment.liked
+    await request.post(`/admin/review/comment/${comment.id}/like`, { liked })
+    comment.liked = liked
+    comment.likeCount = Math.max(0, (comment.likeCount || 0) + (liked ? 1 : -1))
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/** 删除自己发的回复 */
+async function removeComment(comment: any) {
+  try {
+    await ElMessageBox.confirm('删除后无法恢复（它下面的追问也会一并删除），确定删除？', '删除回复', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await request.delete(`/admin/review/comment/${comment.id}`)
+    ElMessage.success('已删除')
+    loadReviews()
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+/**
+ * 房东回复：comment 为 null 表示回复整条评价，否则挂在该条回复下（房东也能在别人评论里追问）。
+ */
+async function reply(review: any, comment: any) {
+  const title = comment ? `回复 ${comment.userName}` : `回复 ${review.tenantName} 的评价`
+  try {
+    const { value } = await ElMessageBox.prompt('输入你的回复内容', title, {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：感谢入住，有任何问题随时联系我～',
+      inputValidator: (v: string) => (v && v.trim() ? true : '回复内容不能为空'),
+    })
+    await request.post(`/admin/review/${review.id}/comment`, {
+      content: value.trim(),
+      parentId: comment ? comment.id : null,
+    })
+    ElMessage.success('回复成功')
+    loadReviews()
+  } catch (e: any) {
+    // ElMessageBox 取消会 reject 'cancel'/'close'，不是错误
+    if (e === 'cancel' || e === 'close') return
+    /* 其余错误拦截器已提示 */
   }
 }
 
@@ -356,6 +464,34 @@ async function removeHouse() {
   font-weight: 600;
 }
 
+.review-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 8px;
+}
+
+.review-time {
+  font-size: 12px;
+  color: #c0c4cc;
+}
+
+.like-btn {
+  font-size: 12px;
+  color: #c0c4cc;
+  cursor: pointer;
+  user-select: none;
+  padding-left: 10px;
+}
+
+.like-btn:hover {
+  color: #e74c3c;
+}
+
+.like-btn.liked {
+  color: #e74c3c;
+}
+
 .review-content {
   margin: 8px 0;
   color: #606266;
@@ -375,5 +511,22 @@ async function removeHouse() {
 
 .comment-name {
   color: #1a56db;
+}
+
+.comment-reply-to {
+  font-size: 12px;
+  color: #909399;
+  padding: 0 4px;
+}
+
+.comment-ops {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.reply-row {
+  margin-top: 8px;
 }
 </style>
