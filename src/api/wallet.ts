@@ -33,7 +33,19 @@ export function getWalletTransactions(params: Record<string, any> = {}) {
   return request.get<{ data: { total: number; records: WalletTransaction[] } }>('/admin/wallet/transactions', { params })
 }
 
-/** 提现到微信零钱（预留） */
-export function withdrawWallet(amount: number) {
-  return request.post<{ data: WalletInfo }>('/admin/wallet/withdraw', { amount })
+/**
+ * 提现到微信零钱（预留）。
+ * @param idempotencyKey 幂等键：调用方在「打开提现弹窗」时生成一次，
+ *                       同一弹窗内重复提交命中同一键 ⇒ 后端只受理一次（防双击重复扣款）
+ */
+export function withdrawWallet(amount: number, idempotencyKey: string) {
+  return request.post<{ data: WalletInfo }>('/admin/wallet/withdraw', { amount, idempotencyKey })
+}
+
+/** 生成幂等键：优先用原生 crypto.randomUUID，非安全上下文（http）下退化为时间戳+随机数 */
+export function genIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `idem-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

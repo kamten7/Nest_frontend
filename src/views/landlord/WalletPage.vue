@@ -71,7 +71,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getWallet, getWalletTransactions, withdrawWallet, type WalletTransaction } from '@/api/wallet'
+import { getWallet, getWalletTransactions, withdrawWallet, genIdempotencyKey, type WalletTransaction } from '@/api/wallet'
 
 const balance = ref(0)
 /** 在租订单押金：房东可见但不可提现 */
@@ -85,6 +85,8 @@ const total = ref(0)
 
 const withdrawVisible = ref(false)
 const withdrawAmount = ref('')
+/** 幂等键：打开弹窗时生成一次，弹窗内重复提交命中同一键 ⇒ 后端只扣一次款 */
+const withdrawIdemKey = ref('')
 
 const BIZ_TEXT: Record<string, string> = {
   RECHARGE: '充值', WITHDRAW: '提现',
@@ -130,6 +132,8 @@ function onPage(p: number) {
 
 function openWithdraw() {
   withdrawAmount.value = ''
+  // 每次打开弹窗都换新键：同一次"提现意图"内重试会被幂等拦下，关掉重开则是新的合法提现
+  withdrawIdemKey.value = genIdempotencyKey()
   withdrawVisible.value = true
 }
 
@@ -149,7 +153,7 @@ async function doWithdraw() {
     return
   }
   try {
-    const res: any = await withdrawWallet(amount)
+    const res: any = await withdrawWallet(amount, withdrawIdemKey.value)
     balance.value = Number(res.data?.balance || 0)
     if (res.data?.availableBalance != null) {
       availableBalance.value = Number(res.data.availableBalance)
