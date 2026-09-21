@@ -5,7 +5,7 @@ export interface WalletInfo {
   walletId: number
   /** 钱包余额（含在租订单的押金） */
   balance: number
-  /** 锁定金额：在租订单押金，房东可见但不可提现 */
+  /** 锁定金额：在租订单押金 + 未消耗的预付租金，房东可见但不可提现 */
   lockedAmount: number
   /** 可提现余额 = balance − lockedAmount */
   availableBalance: number

@@ -44,7 +44,11 @@
         <el-descriptions-item label="扣除押金">
           <span class="deduct">{{ money(order.termination.deductAmount) }}元</span>
         </el-descriptions-item>
-        <el-descriptions-item label="退回租客">{{ money(order.termination.refundAmount) }}元</el-descriptions-item>
+        <el-descriptions-item label="押金退回">{{ money(order.termination.refundAmount) }}元</el-descriptions-item>
+        <el-descriptions-item label="预付租金退回">
+          {{ money(order.termination.prepaidRefundAmount) }}元
+          <span v-if="order.termination.prepaidMonths > 0" class="form-tip">（未住 {{ order.termination.prepaidMonths }} 个月）</span>
+        </el-descriptions-item>
         <el-descriptions-item label="备注">{{ order.termination.remark || '—' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -133,15 +137,16 @@
         </el-form-item>
         <el-form-item label="结算预览">
           <span class="preview">
-            押金 {{ money(order.deposit) }}元 − 扣除 <b>{{ money(deductAmount) }}</b>元 =
+            押金 {{ money(order.deposit) }}元 − 扣除 <b>{{ money(deductAmount) }}</b>元<span v-if="prepaidRefund > 0">
+              ＋ 预付租金退回 <b>{{ money(prepaidRefund) }}</b>元</span> =
             退回租客 <b class="refund">{{ money(refundPreview) }}</b>元
           </span>
         </el-form-item>
         <el-form-item>
           <el-button type="warning" :loading="submitting" @click="refund">
-            确认退租并退回押金
+            确认退租并退回押金与预付租金
           </el-button>
-          <span class="form-tip">仅当已购租期结束后可结算；超 7 天未结算系统将自动全额退回</span>
+          <span class="form-tip">提交退租申请满 7 天冷却期后方可结算；超期未结算系统将自动全额退回</span>
         </el-form-item>
       </el-form>
     </el-card>
@@ -169,11 +174,15 @@ const deductAmount = ref(0)
 const deductRemark = ref('')
 const submitting = ref(false)
 
-/** 结算预览：退回租客金额 = 押金 − 扣除 */
+/** 未住租期的预付租金退回（申请退租时后端已算好并冻结，见 RentTerminationVO.prepaidRefundAmount） */
+const prepaidRefund = computed(() => Number(order.value?.termination?.prepaidRefundAmount || 0))
+
+/** 结算预览：退回租客金额 = 押金 − 扣除 + 预付租金退回
+ * （漏掉最后一项会让房东看到的金额小于租客实际到账额） */
 const refundPreview = computed(() => {
   const deposit = Number(order.value?.deposit || 0)
   const deduct = Number(deductAmount.value || 0)
-  return Math.max(deposit - deduct, 0)
+  return Math.max(deposit - deduct, 0) + prepaidRefund.value
 })
 
 const STATUS_TEXT: Record<number, string> = { 1: '待缴押金', 2: '租房中', 3: '退租申请中', 4: '已退租', 5: '已取消' }
@@ -298,10 +307,14 @@ function refund() {
     ElMessage.warning('扣除金额不能为负数，也不能超过押金总额')
     return
   }
-  const refundAmount = deposit - deduct
+  // 合计退回 = 押金扣除后的余额 + 未住租期的预付租金退回（后者在申请退租时已冻结）
+  const refundAmount = Math.max(deposit - deduct, 0) + prepaidRefund.value
+  const prepaidTip = prepaidRefund.value > 0
+    ? `（含未住租期的预付租金 ${money(prepaidRefund.value)} 元）`
+    : ''
   const tip = deduct > 0
-    ? `确认从押金中扣除 ${money(deduct)} 元归您所有，并退回租客 ${money(refundAmount)} 元？`
-    : `确认将押金 ${money(deposit)} 元全额退回租客钱包？`
+    ? `确认从押金中扣除 ${money(deduct)} 元归您所有？本次共退回租客 ${money(refundAmount)} 元${prepaidTip}。`
+    : `确认退回租客 ${money(refundAmount)} 元${prepaidTip}？`
   ElMessageBox.confirm(tip, '退租结算', {
     confirmButtonText: '确认结算',
     cancelButtonText: '取消',

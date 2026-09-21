@@ -4,10 +4,10 @@
     <div class="balance-card">
       <div class="balance-label">钱包余额（元）</div>
       <div class="balance-num">{{ money(balance) }}</div>
-      <div class="balance-tip">租客缴纳的押金与房租会自动到账</div>
+      <div class="balance-tip">租客缴纳的押金与房租会自动到账（在租押金与预付租金需退租结算后方可提现）</div>
       <div class="balance-split">
         <span class="split-item">
-          在租押金（不可提现）<b class="locked">{{ money(lockedAmount) }}</b>
+          在租押金与预付租金（不可提现）<b class="locked">{{ money(lockedAmount) }}</b>
         </span>
         <span class="split-item">
           可提现余额<b class="available">{{ money(availableBalance) }}</b>
@@ -58,7 +58,7 @@
     <!-- 提现弹窗 -->
     <el-dialog v-model="withdrawVisible" title="提现到微信零钱" width="380px">
       <el-input v-model="withdrawAmount" type="number" placeholder="请输入提现金额" />
-      <div class="dialog-tip">可提现余额 {{ money(availableBalance) }} 元（余额 {{ money(balance) }} 元中，{{ money(lockedAmount) }} 元为在租押金，退租结算后方可提现）</div>
+      <div class="dialog-tip">可提现余额 {{ money(availableBalance) }} 元（余额 {{ money(balance) }} 元中，{{ money(lockedAmount) }} 元为在租押金与预付租金，退租结算后方可提现）</div>
       <div class="dialog-tip">当前为预留接口：扣除余额、状态=处理中，未对接实际到账</div>
       <template #footer>
         <el-button @click="withdrawVisible = false">取消</el-button>
@@ -74,7 +74,7 @@ import { ElMessage } from 'element-plus'
 import { getWallet, getWalletTransactions, withdrawWallet, genIdempotencyKey, type WalletTransaction } from '@/api/wallet'
 
 const balance = ref(0)
-/** 在租订单押金：房东可见但不可提现 */
+/** 锁定金额 = 在租订单押金 + 未消耗的预付租金：房东可见但不可提现 */
 const lockedAmount = ref(0)
 /** 可提现余额 = balance − lockedAmount */
 const availableBalance = ref(0)
@@ -147,7 +147,7 @@ async function doWithdraw() {
   if (amount > Number(availableBalance.value)) {
     ElMessage.warning(
       lockedAmount.value > 0
-        ? `提现金额不能超过可提现余额（${money(availableBalance.value)} 元，另有 ${money(lockedAmount.value)} 元为在租押金不可提现）`
+        ? `提现金额不能超过可提现余额（${money(availableBalance.value)} 元，另有 ${money(lockedAmount.value)} 元为在租押金与预付租金不可提现）`
         : '提现金额不能超过余额',
     )
     return

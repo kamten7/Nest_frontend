@@ -17,8 +17,12 @@ export interface RentTermination {
   effectiveEndPeriod: string
   /** 从押金中扣除、归房东的金额（物品损坏赔偿等） */
   deductAmount: number
-  /** 实际退回租客的押金金额 */
+  /** 实际退回租客的押金金额（不含预付租金退款） */
   refundAmount: number
+  /** 未住租期的月数（申请退租时后端算好并冻结） */
+  prepaidMonths: number
+  /** 未住租期的预付租金退回金额，与押金退款分两笔入账 */
+  prepaidRefundAmount: number
   refundStatus: number
   refundTime: string | null
   remark: string | null
